@@ -1,5 +1,10 @@
 const { App } = require('@slack/bolt');
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+const appwrite = require('node-appwrite');
+const { InputFile } = require('node-appwrite/file');
 
 const app = new App({
     token: process.env.SLACK_BOT_TOKEN,
@@ -10,9 +15,84 @@ const app = new App({
 
 const USER_ID = process.env.USER_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
+const APPWRITE_ENDPOINT = process.env.APPWRITE_ENDPOINT;
+const APPWRITE_PROJECT_ID = process.env.APPWRITE_PROJECT_ID;
+const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY;
+const APPWRITE_BUCKET_ID = process.env.APPWRITE_BUCKET_ID;
+
+const client = new appwrite.Client();
+client
+    .setEndpoint(APPWRITE_ENDPOINT)
+    .setProject(APPWRITE_PROJECT_ID)
+    .setKey(APPWRITE_API_KEY);
+
+const storage = new appwrite.Storage(client);
+
+let pendingUploads = {};
 
 app.message(async ({ message, say }) => {
-    if (message.channel_type === 'im' && message.user === USER_ID) {
+
+    if (pendingUploads.url && message.channel_type === 'im' && message.user === USER_ID) {
+        const fileData = pendingUploads;
+        const customId = message.text;
+        pendingUploads = {};
+
+        const localFilePath = path.join(__dirname, 'cache', fileData.id + path.extname(fileData.name));
+        const writer = fs.createWriteStream(localFilePath);
+        
+        try {
+            const response = await axios({
+                url: fileData.url,
+                method: 'GET',
+                responseType: 'stream',
+                headers: {
+                    'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`
+                }
+            });
+            response.data.pipe(writer);
+            
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
+
+            const inputFile = InputFile.fromPath(localFilePath, fileData.name);
+            const appwriteFile = await storage.createFile(APPWRITE_BUCKET_ID, customId, inputFile, [appwrite.Permission.read(appwrite.Role.any())]);
+            
+            const shareFileUrl = `https://cdn.isitzoe.dev/${appwriteFile.$id}`;
+            
+            await say(`Hey <@${message.user}>, your file is now on CDN! You can access it here: ${shareFileUrl} :3`);
+            
+            fs.unlinkSync(localFilePath);
+
+        } catch (error) {
+            console.error('Error downloading file:', error);
+            await say(`I was trying to get your file on CDN, but something broke :heavysob: maybe the ID is taken? Can you pwease re-upload it? :3`);
+            if (fs.existsSync(localFilePath)) {
+                fs.unlinkSync(localFilePath);
+            }
+        }
+        return;
+    }
+
+    if (message.text == "cdn") {
+        if (message.files && message.files.length > 0) {
+            const file = message.files[0];
+            if (file.url_private_download) {
+                pendingUploads = {
+                    url: file.url_private_download,
+                    id: file.id,
+                    name: file.name
+                };
+                await say(`Hiiii cutie :DDD What ID should I use for this file?`);
+            } else {
+                await say(`I was trying to fetch the file for CDN, but it seems broken :heavysob:, can you pwease re-upload it? :3`);
+            }
+        } else {
+            await say(`I saw you said CDN but there was no file :heavysob:. Can you pwease upload the file you want to share? :3`);
+        }
+
+    } else if (message.channel_type === 'im' && message.user === USER_ID) {
         await say({
             text: message.text,
             blocks: [
@@ -56,13 +136,13 @@ app.action('fire_button_click', async ({ body, ack, client }) => {
 
         await client.chat.postMessage({
             channel: CHANNEL_ID,
-            text: "Pls thread here! :D",
+            text: "Pls thread here! :thread: :D",
             blocks: [
                 {
                     type: "section",
                     text: {
                         type: "mrkdwn",
-                        text: "Pls thread here! :D"
+                        text: "Pls thread here! :thread: :D"
                     }
                 },
                 {
@@ -241,13 +321,13 @@ app.view('reply_yap_suggestion', async ({ ack, body, view, client }) => {
         
         await client.chat.postMessage({
             channel: CHANNEL_ID,
-            text: "Pls thread here! :D",
+            text: "Pls thread here! :thread: :D",
             blocks: [
                 {
                     type: "section",
                     text: {
                         type: "mrkdwn",
-                        text: "Pls thread here! :D"
+                        text: "Pls thread here! :thread: :D"
                     }
                 },
                 {
