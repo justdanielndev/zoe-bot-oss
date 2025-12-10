@@ -354,6 +354,48 @@ app.view('reply_yap_suggestion', async ({ ack, body, view, client }) => {
     }
 });
 
+app.event('member_joined_channel', async ({ event, client }) => {
+    if (event.channel === CHANNEL_ID) {
+        try {
+            await client.chat.postMessage({
+                channel: USER_ID,
+                text: `Heyaaaaa :D Just letting you know user <@${event.user}> has joined your channel and (if they weren't there already) the ping group`,
+            });
+
+            await client.chat.postMessage({
+                channel: USER_ID,
+                text: `Lov yu byeee :3`,
+            });
+
+            const currentUsers = await client.usergroups.users.list({
+                usergroup: 'S09LUMPUBU0'
+            });
+            
+            if (currentUsers.users.includes(event.user)) {
+                console.log(`User ${event.user} is already in the cultists group.`);
+                return;
+            }
+
+            const newUsersList = [...currentUsers.users, event.user].join(',');
+
+            await client.usergroups.users.update({
+                usergroup: 'S09LUMPUBU0',
+                users: newUsersList
+            });
+
+            await client.chat.postMessage({
+                channel: event.user,
+                text: `Hey <@${event.user}>! Welcome to the Zoe's yapping channel :D You've been added to the ping group :3 now you can't leave :neocat_evil:\n\n(Joking, you can leave anytime by just removing yourself from the group in Slack settings)`,
+            });
+
+            console.log(`Added user ${event.user} to cultists group.`);
+
+        } catch (error) {
+            console.error('Error adding user to group:', error);
+        }
+    }
+});
+
 (async () => {
     await app.start(process.env.PORT || 3000);
     console.log('Running :3');
